@@ -8,7 +8,7 @@ from pathlib import Path
 from termcolor import colored
 
 from .code_search import CodeResult, search_code
-from .tickets import STATUSES, Ticket, TicketStore
+from .tickets import COMMIT_TYPES, STATUSES, Ticket, TicketStore
 
 
 def main() -> None:
@@ -49,9 +49,10 @@ def _menu(store: TicketStore, repository_root: Path) -> None:
 def _create_ticket(store: TicketStore) -> None:
     title = input(_tui("Title: "))
     description = input(_tui("Description: "))
+    ticket_type = input(_tui(f"Type ({', '.join(sorted(COMMIT_TYPES))}): ")).strip().lower()
     status = input(_tui(f"Status ({', '.join(sorted(STATUSES))}): ")).strip().lower()
     tags = input(_tui("Tags (comma-separated): "))
-    ticket = store.create_ticket(title, description, status, tags)
+    ticket = store.create_ticket(title, description, ticket_type, status, tags)
     print(_tui(f"Created ticket #{ticket.id}."))
 
 
@@ -67,6 +68,7 @@ def _view_active_ticket(store: TicketStore, repository_root: Path) -> None:
         print(_warning("No active ticket."))
         return
     print(_tui(f"\nTicket #{ticket.id}"))
+    print(f"{_tui('Type:')} {_user_text(ticket.type)}")
     print(f"{_tui('Title:')} {_user_text(ticket.title)}")
     print(f"{_tui('Description:')} {_user_text(ticket.description)}")
     print(f"{_tui('Status:')} {_user_text(ticket.status)}")
@@ -88,7 +90,7 @@ def _show_tickets(tickets: list[Ticket]) -> None:
         print(_warning("No tickets found."))
     for ticket in tickets:
         print(
-            f"{_tui(f'#{ticket.id} [{ticket.status}]')} {_user_text(ticket.title)} "
+            f"{_tui(f'#{ticket.id} [{ticket.type}] [{ticket.status}]')} {_user_text(ticket.title)} "
             f"{_user_text(f'({', '.join(ticket.tags)})')} {_date(ticket.updated_at)}"
         )
 
