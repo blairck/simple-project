@@ -34,12 +34,15 @@ class CodeResult:
 def search_code(repository_root: Path, query: str, directories: tuple[Path, ...] | None = None, limit: int = 5) -> list[CodeResult]:
     """Return the highest-scoring documented entities for a query."""
     search_directories = directories or (repository_root / "src", repository_root / "tests")
+    cli_directory = repository_root / "src" / "simple_project"
     query_words = Counter(word.lower() for word in WORD_PATTERN.findall(query))
     results: list[CodeResult] = []
     for directory in search_directories:
         if not directory.is_dir():
             continue
         for source_file in directory.rglob("*.py"):
+            if source_file.is_relative_to(cli_directory):
+                continue
             results.extend(_score_file(source_file, query_words))
     return sorted(results, key=lambda result: (-result.score, result.name, str(result.path)))[:limit]
 

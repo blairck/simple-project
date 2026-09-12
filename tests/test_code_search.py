@@ -42,3 +42,21 @@ class CodeSearchTests(unittest.TestCase):
         self.assertEqual(results[0].docstring, "Read a Foo record.")
         self.assertEqual(results[0].entity_type, "Python function")
         self.assertTrue(results[0].vscode_link.startswith("vscode://file/"))
+
+    def test_ignores_copied_cli_package(self) -> None:
+        """Exclude Simple Project internals from host project search results."""
+        with TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            source_directory = root / "src"
+            cli_directory = source_directory / "simple_project"
+            cli_directory.mkdir(parents=True)
+            (cli_directory / "cli.py").write_text(
+                'def internal_search():\n    """Find the matching host record."""\n', encoding="utf-8"
+            )
+            (source_directory / "host.py").write_text(
+                'def host_search():\n    """Find the matching host record."""\n', encoding="utf-8"
+            )
+
+            results = search_code(root, "matching host")
+
+        self.assertEqual([result.name for result in results], ["host_search"])

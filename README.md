@@ -41,6 +41,28 @@ The final command opens the local ticket CLI. It creates a
 `.simple-project.db` file at the repository root that should be committed and
 searches `src/` and `tests/` lazily when requested.
 
+## Add to an existing project
+
+To add the CLI to an existing `uv`-managed Python project, copy
+`src/simple_project/` into its source directory and install its runtime
+dependency:
+
+```bash
+uv add termcolor
+```
+
+Add this entry to `[project.scripts]` in `pyproject.toml`, preserving any
+existing script entries:
+
+```toml
+simple-project = "simple_project.cli:main"
+```
+
+Projects using `uv_build` must also include `simple_project` in
+`[tool.uv.build-backend].module-name`. Run `uv sync`, then start the CLI from
+the project root with `uv run simple-project`. Commit the resulting
+`.simple-project.db` file with the project.
+
 ## Usage
 
 ```bash
