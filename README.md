@@ -63,6 +63,38 @@ Projects using `uv_build` must also include `simple_project` in
 the project root with `uv run simple-project`. Commit the resulting
 `.simple-project.db` file with the project.
 
+If `uv run simple-project` raises `ModuleNotFoundError: No module named
+'simple_project'` on Python 3.14, some process on the machine (Spotlight,
+iCloud Drive, backup or security software — commonly triggered under
+`~/Documents`) has set the macOS "hidden" flag on files inside `.venv`. Python
+3.14's `site.py` intentionally skips any `.pth` file with that flag as a
+security hardening measure, and setuptools editable installs rely entirely on
+a `.pth` file to expose the package. `chflags -R nohidden .venv` clears the
+flag for one run, but it can reappear moments later from the same background
+process, breaking the install again.
+
+The durable fix is to stop depending on the `.pth` file at all: install the
+project as a non-editable wheel every time. Since this must survive every new
+terminal, set it once per machine in your shell profile (e.g. `~/.bash_profile`
+or `~/.zshrc`) rather than exporting it per session:
+
+```bash
+echo 'export UV_NO_EDITABLE=true' >> ~/.bash_profile
+```
+
+`uv.toml` and `.env` files cannot express this (uv rejects `no-editable` as a
+config key, and `.env` loads too late to affect `uv`'s own sync step), so the
+shell profile is the only place this setting reliably persists.
+
+### Updating simple-project code
+
+To update the `simple-project` code in your existing project, follow these steps:
+
+1. Pull the latest changes from the `simple-project` repository.
+2. Copy the updated `src/simple_project/` directory into your project's source directory.
+3. Run `export UV_NO_EDITABLE=true && uv sync --reinstall` to ensure all dependencies and scripts are up to date. Note the UV_NO_EDITABLE is only needed if your bash_profile file doesn't already have it.
+4. Start the CLI from the project root with `uv run simple-project`.
+
 ## Usage
 
 ```bash

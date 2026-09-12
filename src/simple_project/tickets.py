@@ -142,6 +142,15 @@ class TicketStore:
             ).fetchone()
         return Comment(*row)
 
+    def ticket_comments(self, ticket_id: int) -> list[Comment]:
+        """Return comments for a ticket in creation order."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT id, ticket_id, author, body, created_at FROM comments WHERE ticket_id = ? ORDER BY created_at ASC, id ASC",
+                (ticket_id,),
+            ).fetchall()
+        return [Comment(*row) for row in rows]
+
     def recent_tickets(self, limit: int = 5) -> list[Ticket]:
         """Return the most recently updated tickets."""
         return self._list_tickets(
