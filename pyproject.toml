@@ -1,0 +1,36 @@
+[build-system]
+requires = ["uv_build>=0.12.10,<0.13.0"]
+build-backend = "uv_build"
+
+[project]
+name = "simple_project"
+version = "0.1.0"
+description = "Offline ticket management and Python code search for local repositories."
+requires-python = ">=3.13"
+dependencies = [
+    "pytest>=9.1.1",
+    "termcolor>=3.3.0",
+]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.5.0",
+    "ruff>=0.14.13",
+]
+
+[project.scripts]
+simple-project = "simple_project.cli:main"
+template-app = "template_app:main"
+
+[tool.uv.build-backend]
+module-name = ["simple_project", "template_app"]
+data = { purelib = "src" }
+
+[tool.uv]
+python-preference = "only-managed"
+
+[tool.ruff.lint]
+select = ["D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

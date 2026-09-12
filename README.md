@@ -1,21 +1,56 @@
-# Description #
+# Simple Project
 
-This is a lightweight template for projects to simplify following good unit testing & style practices by providing Makefile commands and directory structure. Using PyLint from the very beginning of a project ensures that proper style is adhered to, and having the project ready for unit tests will make them easier to write. Coverage reports encourage adding additional unit test cases.
+Simple Project is a `uv` template for Python applications. It includes a
+dependency-free CLI for local ticket management and Python docstring search.
 
-### Requirements ###
+## Template layout
 
-* Python 2.7
-* Virtualenv
-* Make
-* Pylint
-* Coverage
-
-### Setting Up ###
-Copy over the template to your project directory. Move your source code to to the src directory, and unittest tests to the test folder. In the root folder of the project do the following:
+```text
+src/
+	simple_project/   # Retain this package in every generated repository.
+	template_app/     # Rename this package for the generated application.
+tests/
+	test_code_search.py
+	test_tickets.py
 ```
-virtualenv env
-pip install -r requirements.txt
-. env/bin/activate
-make status
+
+When creating a project from this template, rename `template_app`, update the
+`project.name` and `template-app` console-script entry in `pyproject.toml`, and
+keep `simple_project` and its tests unchanged. The CLI stores its repository
+local data in `.simple-project.db`.
+
+## Create a project
+
+Create a new repository from this entire template, then rename
+`src/template_app/` to the application package name. Update `project.name` and
+the `template-app` entry under `[project.scripts]` in `pyproject.toml`.
+
+Keep `src/simple_project/`, the `simple-project` script entry, `.python-version`,
+and the `uv_build` configuration unchanged. From the new repository root, run:
+
+```bash
+git init
+uv sync
+uv run pre-commit install
+uv run simple-project
 ```
-The status command will run PyLint over code in the src folder and then (if no lint issues are found) execute all unittest files in the test folder.
+
+The final command opens the local ticket CLI. It creates an ignored
+`.simple-project.db` file at the repository root and searches `src/` and
+`tests/` lazily when requested.
+
+## Usage
+
+```bash
+uv run simple-project
+```
+
+The template pins Python 3.14 and uses `uv` managed Python installations. Its
+packages are installed directly into the local environment, avoiding macOS
+editable-install path issues.
+
+Run tests with:
+
+```bash
+uv run python -m unittest discover -s tests -v
+```

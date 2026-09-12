@@ -1,0 +1,5 @@
+.venv/
+.simple-project.db
+__pycache__/
+*.py[cod]
+.DS_Store
