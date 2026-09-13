@@ -11,7 +11,7 @@ import subprocess
 
 
 STATUSES = frozenset({"open", "closed", "cancelled", "active"})
-COMMIT_TYPES = frozenset({"build", "chore", "ci", "docs", "feat", "fix", "perf", "refactor", "revert", "style", "test"})
+COMMIT_TYPES = frozenset({"chore", "ci", "docs", "feat", "fix", "test"})
 
 
 @dataclass(frozen=True)
