@@ -52,6 +52,36 @@ class TicketStoreTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Type must be one of"):
             self.store.create_ticket("First", "", "feature", "open", "")
 
+    def test_search_text_scopes_statuses_and_ranks_matching_fields(self) -> None:
+        """Search only the requested statuses and rank tickets by matching fields."""
+        self.store.create_ticket("Fix login", "Login issue", "fix", "open", "api")
+        self.store.create_ticket("Login guide", "", "docs", "open", "")
+        self.store.create_ticket("Closed login", "", "fix", "closed", "")
+
+        results = self.store.search_text("login", frozenset({"open", "active"}))
+
+        self.assertEqual(
+            [(result.ticket.title, result.score) for result in results],
+            [("Fix login", 2), ("Login guide", 1)],
+        )
+
+    def test_search_tags_scopes_statuses_and_matches_normalized_tags(self) -> None:
+        """Search tags without attempting string operations on the tag tuple."""
+        self.store.create_ticket("Fix login", "", "fix", "open", "API, login")
+        self.store.create_ticket("Closed login", "", "fix", "closed", "api")
+
+        results = self.store.search_tags("api", frozenset({"open", "active"}))
+
+        self.assertEqual([(result.ticket.title, result.score) for result in results], [("Fix login", 1)])
+
+    def test_update_ticket_replaces_every_editable_field(self) -> None:
+        """Persist a complete validated edit as one ticket update."""
+        ticket = self.store.create_ticket("First", "Old", "fix", "open", "api")
+
+        updated = self.store.update_ticket(ticket.id, "Second", "New", "docs", "closed", "guide, API")
+
+        self.assertEqual((updated.title, updated.description, updated.type, updated.status, updated.tags), ("Second", "New", "docs", "closed", ("api", "guide")))
+
     def test_migrates_existing_tickets_to_chore_type(self) -> None:
         """Preserve old tickets by assigning the default Conventional Commit type."""
         self.store.database_path.unlink()

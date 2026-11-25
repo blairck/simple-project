@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from simple_project.cli import _date, _show_code_results, _strip_ansi_escape_sequences, _view_active_ticket
+from simple_project.cli import _date, _select_ticket, _show_code_results, _strip_ansi_escape_sequences, _view_active_ticket
 from simple_project.code_search import CodeResult
 from simple_project.tickets import TicketStore
 
@@ -56,6 +56,27 @@ class CodeResultDisplayTests(unittest.TestCase):
         self.assertIn("Investigating", output.getvalue())
         self.assertIn("Found the bug", output.getvalue())
 
+    def test_view_active_ticket_edits_ticket(self) -> None:
+        """Use the shared full-ticket editor from the active-ticket view."""
+        with TemporaryDirectory() as temporary_directory:
+            repository_root = Path(temporary_directory)
+            store = TicketStore(repository_root)
+            store.initialize()
+            ticket = store.create_ticket("Fix login", "Old description", "fix", "active", "api")
+
+            with patch(
+                "simple_project.cli._read_input",
+                side_effect=["2", "Fix logout", "New description", "docs", "open", "guide"],
+            ):
+                _view_active_ticket(store, repository_root)
+
+            updated = store.get_ticket(ticket.id)
+
+        self.assertEqual(
+            (updated.title, updated.description, updated.type, updated.status, updated.tags),
+            ("Fix logout", "New description", "docs", "open", ("guide",)),
+        )
+
     def test_strip_ansi_escape_sequences_from_input(self) -> None:
         """Drop terminal arrow-key escape sequences before user text is stored."""
         self.assertEqual(_strip_ansi_escape_sequences("hello\x1b[D\x1b[Cworld"), "helloworld")
@@ -75,3 +96,17 @@ class CodeResultDisplayTests(unittest.TestCase):
     def test_date_displays_year_month_day_only(self) -> None:
         """Render stored timestamps without the time portion in UI output."""
         self.assertEqual(_date("2024-05-15 22:41:12"), "2024-05-15")
+
+    def test_blank_result_selection_returns_to_main_menu(self) -> None:
+        """Allow Enter to leave results instead of reporting an invalid choice."""
+        with TemporaryDirectory() as temporary_directory:
+            store = TicketStore(Path(temporary_directory))
+            store.initialize()
+            ticket = store.create_ticket("Fix login", "", "fix", "open", "")
+            output = StringIO()
+
+            with redirect_stdout(output), patch("simple_project.cli._read_input", return_value="") as read_input:
+                _select_ticket(store, [ticket])
+
+        self.assertIn("0) Return to main menu", read_input.call_args.args[0])
+        self.assertNotIn("Choose a listed option.", output.getvalue())

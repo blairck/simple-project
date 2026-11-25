@@ -10,7 +10,7 @@ import readline
 from termcolor import colored
 
 from .code_search import CodeResult, search_code
-from .tickets import COMMIT_TYPES, STATUSES, Ticket, TicketStore
+from .tickets import COMMIT_TYPES, STATUSES, Ticket, TicketSearchResult, TicketStore
 
 ANSI_ESCAPE_SEQUENCE = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
@@ -37,7 +37,7 @@ def main() -> None:
 
 def _menu(store: TicketStore, repository_root: Path) -> None:
     while True:
-        print(_tui("\nSimple Project\n1) View active ticket\n2) Create ticket\n3) Update ticket status\n4) Search tickets\n5) Search code\n6) Recently updated tickets\n0) Exit"))
+        print(_tui("\nSimple Project\n1) View active ticket\n2) Create ticket\n3) Search tickets (by text)\n4) Search tickets (by tag)\n5) Search code\n6) Recently updated tickets\n0) Exit"))
         choice = _read_input(_tui("$ ")).strip()
         try:
             if choice == "1":
@@ -45,13 +45,13 @@ def _menu(store: TicketStore, repository_root: Path) -> None:
             elif choice == "2":
                 _create_ticket(store)
             elif choice == "3":
-                _update_status(store)
+                _search_tickets(store, False)
             elif choice == "4":
-                _show_tickets(store.search_tickets(_read_input(_tui("Search text or tag: "))))
+                _search_tickets(store, True)
             elif choice == "5":
                 _show_code_results(search_code(repository_root, _read_input(_tui("Search code: "))), repository_root)
             elif choice == "6":
-                _show_tickets(store.recent_tickets())
+                _select_ticket(store, store.recent_tickets())
             elif choice == "0":
                 return
             else:
@@ -72,12 +72,6 @@ def _create_ticket(store: TicketStore) -> None:
     print(_tui(f"Created ticket #{ticket.id}."))
 
 
-def _update_status(store: TicketStore) -> None:
-    ticket_id = int(_read_input(_tui("Ticket ID: ")))
-    status = _read_input(_tui(f"Status ({', '.join(sorted(STATUSES))}): ")).strip().lower()
-    print(_tui(f"Updated ticket #{store.update_status(ticket_id, status).id}."))
-
-
 def _view_active_ticket(store: TicketStore, repository_root: Path) -> None:
     ticket = store.active_ticket()
     if ticket is None:
@@ -95,15 +89,83 @@ def _view_active_ticket(store: TicketStore, repository_root: Path) -> None:
         print(_tui("Comments:"))
         for comment in comments:
             print(f"  {_user_text(comment.author)} ({_date(comment.created_at)}) {_user_text(comment.body)}")
-    print(_tui("1) Find related code\n2) Update ticket status\n3) Add comment\n0) Back"))
+    print(_tui("1) Find related code\n2) Edit ticket\n3) Add comment\n0) Back"))
     choice = _read_input(_tui("$ ")).strip()
     if choice == "1":
         _show_code_results(search_code(repository_root, f"{ticket.title} {ticket.description}"), repository_root)
     elif choice == "2":
-        status = _read_input(_tui(f"Status ({', '.join(sorted(STATUSES))}): ")).strip().lower()
-        store.update_status(ticket.id, status)
+        _edit_ticket(store, ticket)
     elif choice == "3":
         store.add_comment(ticket.id, _read_input(_tui("Comment: ")))
+
+
+def _search_tickets(store: TicketStore, tags_only: bool) -> None:
+    statuses = _choose_search_statuses()
+    if statuses is None:
+        return
+    query = _read_input(_tui("Search tags: " if tags_only else "Search text: "))
+    results = store.search_tags(query, statuses) if tags_only else store.search_text(query, statuses)
+    _select_ticket(store, results)
+
+
+def _choose_search_statuses() -> frozenset[str] | None:
+    while True:
+        print(_tui("\nSelect search mode\n1) Search active/open tickets\n2) Search closed/cancelled tickets\n0) Back to main menu"))
+        choice = _read_input(_tui("$ ")).strip()
+        if choice == "1":
+            return frozenset({"active", "open"})
+        if choice == "2":
+            return frozenset({"closed", "cancelled"})
+        if choice == "0":
+            return None
+        print(_warning("Choose a listed option."))
+
+
+def _select_ticket(store: TicketStore, results: list[Ticket] | list[TicketSearchResult]) -> None:
+    while True:
+        if not results:
+            print(_warning("No tickets found."))
+            return
+        print(_tui("\nResults:"))
+        for index, result in enumerate(results, start=1):
+            ticket = result.ticket if isinstance(result, TicketSearchResult) else result
+            score = f" Score: {result.score}" if isinstance(result, TicketSearchResult) else ""
+            print(f"{_tui(f'{index}) [{ticket.type}] [{ticket.status}]')} {_user_text(ticket.title)} {_user_text(f'({', '.join(ticket.tags)})')} {_date(ticket.updated_at)}{_tui(score)}")
+        choice = _read_input(_tui("Select a ticket to edit\n0) Return to main menu\n$ ")).strip()
+        if not choice or choice == "0":
+            return
+        try:
+            ticket = results[int(choice) - 1]
+        except (IndexError, ValueError):
+            print(_warning("Choose a listed option."))
+            continue
+        _edit_ticket(store, ticket.ticket if isinstance(ticket, TicketSearchResult) else ticket)
+        print(_tui("Select an option:\n1) Return to search results\n2) Return to main menu"))
+        if _read_input(_tui("$ ")).strip() != "1":
+            return
+
+
+def _edit_ticket(store: TicketStore, ticket: Ticket) -> None:
+    print(_tui("\nEdit ticket:"))
+    title = _edit_value("Title", ticket.title)
+    description = _edit_value("Description", ticket.description)
+    ticket_type = _edit_validated_value("Type", ticket.type, COMMIT_TYPES)
+    status = _edit_validated_value("Status", ticket.status, STATUSES)
+    tags = _edit_value("Tags", ", ".join(ticket.tags))
+    store.update_ticket(ticket.id, title, description, ticket_type, status, tags)
+
+
+def _edit_value(label: str, current: str) -> str:
+    value = _read_input(_tui(f"{label} ('{current}'): "))
+    return value if value.strip() else current
+
+
+def _edit_validated_value(label: str, current: str, valid_values: frozenset[str]) -> str:
+    while True:
+        value = _edit_value(label, current).strip().lower()
+        if value in valid_values:
+            return value
+        print(_warning(f"{label} must be one of: {', '.join(sorted(valid_values))}."))
 
 
 def _read_input(prompt: str) -> str:

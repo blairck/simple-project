@@ -10,7 +10,7 @@ import sqlite3
 import subprocess
 
 
-STATUSES = frozenset({"open", "closed", "cancelled", "active"})
+STATUSES = frozenset({"active", "cancelled", "closed", "open"})
 COMMIT_TYPES = frozenset({"chore", "ci", "docs", "feat", "fix", "test"})
 
 
@@ -25,6 +25,14 @@ class Ticket:
     status: str
     tags: tuple[str, ...]
     updated_at: str
+
+
+@dataclass(frozen=True)
+class TicketSearchResult:
+    """Represent a ticket returned from a scored search."""
+
+    ticket: Ticket
+    score: int
 
 
 @dataclass(frozen=True)
@@ -53,7 +61,7 @@ class TicketStore:
                 """
                 CREATE TABLE IF NOT EXISTS tickets (
                     id INTEGER PRIMARY KEY,
-                    type TEXT NOT NULL DEFAULT 'chore' CHECK(type IN ('build', 'chore', 'ci', 'docs', 'feat', 'fix', 'perf', 'refactor', 'revert', 'style', 'test')),
+                    type TEXT NOT NULL DEFAULT 'chore' CHECK(type IN ('chore', 'ci', 'docs', 'feat', 'fix', 'test')),
                     title TEXT NOT NULL,
                     description TEXT NOT NULL,
                     status TEXT NOT NULL CHECK(status IN ('open', 'closed', 'cancelled', 'active')),
@@ -125,6 +133,25 @@ class TicketStore:
             raise ValueError(f"Ticket {ticket_id} does not exist.")
         return self.get_ticket(ticket_id)
 
+    def update_ticket(self, ticket_id: int, title: str, description: str, ticket_type: str, status: str, tags: str) -> Ticket:
+        """Replace a ticket's editable fields after validating the whole update."""
+        self._validate_type(ticket_type)
+        self._validate_status(status)
+        normalized_tags = self.normalize_tags(tags)
+        with self._connect() as connection:
+            try:
+                cursor = connection.execute(
+                    """UPDATE tickets
+                       SET title = ?, description = ?, type = ?, status = ?, tags = ?, updated_at = CURRENT_TIMESTAMP
+                       WHERE id = ?""",
+                    (title.strip(), description.strip(), ticket_type, status, ",".join(normalized_tags), ticket_id),
+                )
+            except sqlite3.IntegrityError as error:
+                raise ValueError("Only one ticket can be active.") from error
+        if cursor.rowcount == 0:
+            raise ValueError(f"Ticket {ticket_id} does not exist.")
+        return self.get_ticket(ticket_id)
+
     def add_comment(self, ticket_id: int, body: str) -> Comment:
         """Add a comment from the repository's Git user and refresh the ticket."""
         author = self._comment_author()
@@ -168,6 +195,16 @@ class TicketStore:
                 (term, term, term, term, limit),
         )
 
+    def search_text(self, query: str, statuses: frozenset[str], limit: int = 5) -> list[TicketSearchResult]:
+        """Return status-scoped tickets ranked by matching text fields."""
+        terms = tuple(term.lower() for term in query.split() if term)
+        return self._search(terms, statuses, False, limit)
+
+    def search_tags(self, query: str, statuses: frozenset[str], limit: int = 5) -> list[TicketSearchResult]:
+        """Return status-scoped tickets ranked by matching comma-separated tags."""
+        terms = self.normalize_tags(query)
+        return self._search(terms, statuses, True, limit)
+
     @staticmethod
     def normalize_tags(tags: str) -> tuple[str, ...]:
         """Return unique, sorted, lowercase tags parsed from comma-separated text."""
@@ -177,6 +214,31 @@ class TicketStore:
         with self._connect() as connection:
             rows = connection.execute(query, parameters).fetchall()
         return [self._ticket_from_row(row) for row in rows]
+
+    def _search(
+        self, terms: tuple[str, ...], statuses: frozenset[str], tags_only: bool, limit: int
+    ) -> list[TicketSearchResult]:
+        if not terms:
+            return []
+        placeholders = ", ".join("?" for _ in statuses)
+        rows = self._list_tickets(
+            f"SELECT id, type, title, description, status, tags, updated_at FROM tickets "
+            f"WHERE status IN ({placeholders}) ORDER BY updated_at DESC, id DESC",
+            tuple(sorted(statuses)),
+        )
+        results = []
+        for ticket in rows:
+            fields = (" ".join(ticket.tags),) if tags_only else (
+                ticket.type,
+                ticket.title,
+                ticket.description,
+                " ".join(ticket.tags),
+            )
+            score = sum(sum(term in field.lower() for field in fields) for term in terms)
+            if score:
+                results.append(TicketSearchResult(ticket, score))
+        results.sort(key=lambda result: result.score, reverse=True)
+        return results[:limit]
 
     @staticmethod
     def _ticket_from_row(row: sqlite3.Row) -> Ticket:
